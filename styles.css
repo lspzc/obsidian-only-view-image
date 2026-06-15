@@ -2,7 +2,7 @@
  * 图片查看器插件 - 样式文件
  *
  * 参考 Google Material Design 设计风格
- * 包含毛玻璃遮罩、工具栏、图片容器等样式
+ * 包含背景遮罩效果（无/半透明/毛玻璃、亮/暗色）、工具栏、图片容器等样式
  */
 
 /* ========================================
@@ -25,6 +25,10 @@
     align-items: center;
     justify-content: center;
 
+    /* CSS 变量默认值，会被 JS 动态覆盖 */
+    --image-viewer-blur-strength: 16px;
+    --image-viewer-overlay-opacity: 0.7;
+
     /* 入场动画 */
     animation: image-viewer-fade-in 0.2s ease-out;
 }
@@ -40,27 +44,44 @@
 }
 
 /* ========================================
- * 遮罩层 - 毛玻璃样式
- * 通过 CSS 变量控制毛玻璃强度和不透明度
+ * 遮罩层 - 无遮罩效果（透明背景）
  * ======================================== */
-.image-viewer-overlay {
-    /* CSS 变量默认值，会被 JS 动态覆盖 */
-    --image-viewer-blur-strength: 16px;
-    --image-viewer-overlay-opacity: 0.5;
+.image-viewer-overlay-none {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
-/* 启用毛玻璃 */
-.image-viewer-blur-enabled {
+/* ========================================
+ * 遮罩层 - 半透明遮罩效果
+ * 通过 CSS 变量控制不透明度
+ * ======================================== */
+.image-viewer-overlay-dim.image-viewer-overlay-dark {
+    background: rgba(0, 0, 0, var(--image-viewer-overlay-opacity));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.image-viewer-overlay-dim.image-viewer-overlay-light {
+    background: rgba(255, 255, 255, var(--image-viewer-overlay-opacity));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* ========================================
+ * 遮罩层 - 毛玻璃遮罩效果
+ * 通过 CSS 变量控制毛玻璃强度和不透明度
+ * ======================================== */
+.image-viewer-overlay-blur.image-viewer-overlay-dark {
     background: rgba(0, 0, 0, var(--image-viewer-overlay-opacity));
     backdrop-filter: blur(var(--image-viewer-blur-strength));
     -webkit-backdrop-filter: blur(var(--image-viewer-blur-strength));
 }
 
-/* 禁用毛玻璃 */
-.image-viewer-blur-disabled {
-    background: rgba(0, 0, 0, var(--image-viewer-overlay-opacity));
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+.image-viewer-overlay-blur.image-viewer-overlay-light {
+    background: rgba(255, 255, 255, var(--image-viewer-overlay-opacity));
+    backdrop-filter: blur(var(--image-viewer-blur-strength));
+    -webkit-backdrop-filter: blur(var(--image-viewer-blur-strength));
 }
 
 /* ========================================
@@ -92,7 +113,7 @@
     max-width: none;
     max-height: none;
 
-    /* 平滑变换 */
+    /* 平滑变换（缩放、旋转、拖拽） */
     transition: transform 0.15s ease-out;
 
     /* 抗锯齿 */
@@ -106,26 +127,26 @@
     border-radius: 4px;
 }
 
-/* 图片加载中 - 隐藏以避免原始尺寸闪烁 */
+/* 图片加载中 - 完全隐藏，避免原始尺寸闪烁 */
 .image-viewer-image-loading {
     opacity: 0;
+    visibility: hidden;
     transition: none;
 }
 
-/* 图片加载完成 - 入场动画 */
+/* 图片加载完成 - 仅做透明度淡入，不使用 transform 动画避免与 JS 设置的 transform 冲突 */
 .image-viewer-image:not(.image-viewer-image-loading) {
-    animation: image-viewer-scale-in 0.25s cubic-bezier(0.2, 0, 0, 1);
+    visibility: visible;
+    animation: image-viewer-fade-in-only 0.25s ease-out;
 }
 
-@keyframes image-viewer-scale-in {
+@keyframes image-viewer-fade-in-only {
     from {
         opacity: 0;
-        transform: scale(0.9);
     }
 
     to {
         opacity: 1;
-        transform: scale(1);
     }
 }
 
@@ -229,16 +250,8 @@
 }
 
 /* ========================================
- * 主题适配 - 浅色主题
+ * 主题适配 - 浅色主题下工具栏样式
  * ======================================== */
-.theme-light .image-viewer-blur-enabled {
-    background: rgba(255, 255, 255, var(--image-viewer-overlay-opacity));
-}
-
-.theme-light .image-viewer-blur-disabled {
-    background: rgba(255, 255, 255, var(--image-viewer-overlay-opacity));
-}
-
 .theme-light .image-viewer-toolbar {
     background: rgba(255, 255, 255, 0.9);
     box-shadow:

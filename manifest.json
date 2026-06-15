@@ -1,7 +1,7 @@
 {
 	"id": "lspzc-only-view-image",
 	"name": "lspzc x only view image",
-	"version": "1.0.8",
+	"version": "1.0.9",
 	"minAppVersion": "1.0.0",
 	"description": "查看图片，仅此而已",
 	"author": "lspzc",

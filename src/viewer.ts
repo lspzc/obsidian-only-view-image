@@ -5,13 +5,14 @@
  * 当查看器关闭时，所有 DOM 元素和事件监听器都会被清理。
  */
 
-import type { ImageViewerSettings, ModifierKey } from './types';
+import type { ImageViewerSettings, ModifierKey, OverlayColorMode, OverlayEffect } from './types';
 
 /** 修饰键到 MouseEvent 属性的映射 */
-const MODIFIER_MAP: Record<ModifierKey, keyof MouseEvent> = {
+const MODIFIER_MAP: Record<ModifierKey, keyof MouseEvent | null> = {
     Ctrl: 'ctrlKey',
     Alt: 'altKey',
     Meta: 'metaKey',
+    None: null,
 };
 
 /** 鼠标按键到 button 值的映射 */
@@ -92,6 +93,8 @@ export class ImageViewer {
         // 检查所有配置的修饰键是否按下
         for (const mod of modifiers) {
             const key = MODIFIER_MAP[mod];
+            // None 修饰键不需要检查按下状态
+            if (key === null) continue;
             if (!e[key]) return false;
         }
 
@@ -101,7 +104,7 @@ export class ImageViewer {
         for (const mod of allMods) {
             if (!configuredMods.has(mod)) {
                 const key = MODIFIER_MAP[mod];
-                if (e[key]) return false;
+                if (key !== null && e[key]) return false;
             }
         }
 
@@ -151,7 +154,7 @@ export class ImageViewer {
             cls: 'image-viewer-overlay',
         });
 
-        // 应用遮罩层样式（毛玻璃、不透明度）
+        // 应用遮罩层样式（背景遮罩效果）
         this.applyOverlayStyles();
 
         // 创建图片容器
@@ -164,7 +167,8 @@ export class ImageViewer {
             this.imageContainer.classList.add('is-draggable');
         }
 
-        // 创建图片元素（初始隐藏，避免原始尺寸闪烁）
+        // 创建图片元素
+        // 使用 image-viewer-image-loading 类隐藏图片，避免原始尺寸闪烁
         this.imageEl = this.imageContainer.createEl('img', {
             cls: 'image-viewer-image image-viewer-image-loading',
             attr: { src: imgSrc, draggable: 'false' },
@@ -172,19 +176,36 @@ export class ImageViewer {
 
         // 图片加载完成后计算初始缩放并显示
         this.imageEl.addEventListener('load', () => {
-            const naturalWidth = this.imageEl?.naturalWidth ?? 0;
-            const naturalHeight = this.imageEl?.naturalHeight ?? 0;
-            this.currentScale = this.calculateFitScale(naturalWidth, naturalHeight);
-            this.applyTransform();
-            // 移除加载中类，显示图片
-            this.imageEl?.classList.remove('image-viewer-image-loading');
+            if (!this.imageEl) return;
+
+            const naturalWidth = this.imageEl.naturalWidth;
+            const naturalHeight = this.imageEl.naturalHeight;
+
+            // 根据设置决定是否进行初始缩放
+            if (this.settings.initialScaleEnabled) {
+                this.currentScale = this.calculateFitScale(naturalWidth, naturalHeight);
+            } else {
+                this.currentScale = 1;
+            }
+
+            // 关键：先设置 transform，再移除 loading 类
+            // 这样图片从隐藏状态直接以缩放后的尺寸出现，避免闪烁
+            this.imageEl.style.transform =
+                `translate(${this.offset.x}px, ${this.offset.y}px) scale(${this.currentScale}) rotate(${this.currentRotation}deg)`;
+
+            // 使用 requestAnimationFrame 确保浏览器已应用 transform 后再显示图片
+            window.requestAnimationFrame(() => {
+                this.imageEl?.classList.remove('image-viewer-image-loading');
+            });
         });
 
-        // 创建工具栏
-        this.toolbar = this.overlay.createEl('div', {
-            cls: 'image-viewer-toolbar',
-        });
-        this.buildToolbar();
+        // 根据设置决定是否显示工具栏
+        if (this.settings.showToolbar) {
+            this.toolbar = this.overlay.createEl('div', {
+                cls: 'image-viewer-toolbar',
+            });
+            this.buildToolbar();
+        }
 
         // 注册事件监听器
         this.bindEvents();
@@ -194,26 +215,53 @@ export class ImageViewer {
     }
 
     /**
-     * 应用遮罩层样式（毛玻璃、不透明度）
+     * 应用遮罩层样式（背景遮罩效果）
      * 通过 CSS 变量传递动态参数，CSS 类中引用这些变量
      */
     private applyOverlayStyles(): void {
         if (!this.overlay) return;
 
-        const blurConfig = this.settings.blur;
+        const overlayConfig = this.settings.overlay;
 
         // 设置 CSS 变量供样式表使用
-        this.overlay.style.setProperty('--image-viewer-blur-strength', `${blurConfig.strength}px`);
-        this.overlay.style.setProperty('--image-viewer-overlay-opacity', `${blurConfig.overlayOpacity}`);
+        this.overlay.style.setProperty('--image-viewer-blur-strength', `${overlayConfig.blurStrength}px`);
+        this.overlay.style.setProperty('--image-viewer-overlay-opacity', `${overlayConfig.opacity}`);
 
-        // 根据是否启用毛玻璃添加对应类
-        if (blurConfig.enabled) {
-            this.overlay.classList.add('image-viewer-blur-enabled');
-            this.overlay.classList.remove('image-viewer-blur-disabled');
-        } else {
-            this.overlay.classList.add('image-viewer-blur-disabled');
-            this.overlay.classList.remove('image-viewer-blur-enabled');
+        // 根据遮罩效果类型添加对应类
+        const effectClass = this.getOverlayEffectClass(overlayConfig.effect);
+        this.overlay.classList.add(effectClass);
+
+        // 根据颜色模式添加对应类
+        const colorClass = this.getOverlayColorClass(overlayConfig.colorMode);
+        this.overlay.classList.add(colorClass);
+    }
+
+    /**
+     * 获取遮罩效果对应的 CSS 类名
+     * @param effect 遮罩效果类型
+     * @returns CSS 类名
+     */
+    private getOverlayEffectClass(effect: OverlayEffect): string {
+        switch (effect) {
+            case 'blur':
+                return 'image-viewer-overlay-blur';
+            case 'dim':
+                return 'image-viewer-overlay-dim';
+            case 'none':
+            default:
+                return 'image-viewer-overlay-none';
         }
+    }
+
+    /**
+     * 获取遮罩颜色模式对应的 CSS 类名
+     * @param colorMode 颜色模式
+     * @returns CSS 类名
+     */
+    private getOverlayColorClass(colorMode: OverlayColorMode): string {
+        return colorMode === 'light'
+            ? 'image-viewer-overlay-light'
+            : 'image-viewer-overlay-dark';
     }
 
     /**
@@ -264,7 +312,8 @@ export class ImageViewer {
         if (this.settings.clickToClose) {
             this.overlayClickHandler = (e: MouseEvent) => {
                 const target = e.target as HTMLElement;
-                // 点击图片容器（非图片本身）或遮罩层时关闭
+                // 点击遮罩层或图片容器（空白区域）时关闭
+                // 点击图片本身、工具栏按钮时不会触发（target 是 img 或 button）
                 if (target === this.overlay || target === this.imageContainer) {
                     this.close();
                 }
@@ -313,6 +362,16 @@ export class ImageViewer {
     private buildToolbar(): void {
         if (!this.toolbar) return;
 
+        // 放大按钮
+        this.createToolbarButton('zoom_in', '放大', () => {
+            this.zoomIn();
+        });
+
+        // 缩小按钮
+        this.createToolbarButton('zoom_out', '缩小', () => {
+            this.zoomOut();
+        });
+
         // 左旋转按钮
         this.createToolbarButton('rotate_left', '向左旋转 90°', () => {
             this.currentRotation -= 90;
@@ -329,7 +388,11 @@ export class ImageViewer {
         this.createToolbarButton('restart_alt', '重置视图', () => {
             const naturalWidth = this.imageEl?.naturalWidth ?? 0;
             const naturalHeight = this.imageEl?.naturalHeight ?? 0;
-            this.currentScale = this.calculateFitScale(naturalWidth, naturalHeight);
+            if (this.settings.initialScaleEnabled) {
+                this.currentScale = this.calculateFitScale(naturalWidth, naturalHeight);
+            } else {
+                this.currentScale = 1;
+            }
             this.currentRotation = 0;
             this.offset = { x: 0, y: 0 };
             this.applyTransform();
@@ -365,6 +428,28 @@ export class ImageViewer {
     }
 
     /**
+     * 放大图片
+     * 使用设置中的缩放步长
+     */
+    private zoomIn(): void {
+        const step = this.settings.zoomStep;
+        const newScale = Math.min(this.currentScale + step, 10);
+        this.currentScale = Math.round(newScale * 100) / 100;
+        this.applyTransform();
+    }
+
+    /**
+     * 缩小图片
+     * 使用设置中的缩放步长
+     */
+    private zoomOut(): void {
+        const step = this.settings.zoomStep;
+        const newScale = Math.max(this.currentScale - step, 0.1);
+        this.currentScale = Math.round(newScale * 100) / 100;
+        this.applyTransform();
+    }
+
+    /**
      * 应用 CSS 变换（缩放 + 旋转 + 平移）
      */
     private applyTransform(): void {
@@ -376,17 +461,19 @@ export class ImageViewer {
 
     /**
      * 滚轮事件处理 - 缩放图片
+     * 使用设置中的缩放步长
      */
     private onWheel(e: WheelEvent): void {
         e.preventDefault();
 
         // 根据滚轮方向调整缩放
-        const delta = e.deltaY > 0 ? -0.2 : 0.2;
-        const newScale = Math.max(0.1, this.currentScale + delta);
+        const step = this.settings.zoomStep;
+        const delta = e.deltaY > 0 ? -step : step;
+        const newScale = this.currentScale + delta;
 
-        // 限制最大缩放
-        if (newScale <= 10) {
-            this.currentScale = Math.round(newScale * 10) / 10;
+        // 限制缩放范围 0.1 ~ 10
+        if (newScale >= 0.1 && newScale <= 10) {
+            this.currentScale = Math.round(newScale * 100) / 100;
             this.applyTransform();
         }
     }
@@ -409,6 +496,7 @@ export class ImageViewer {
         if (e.button !== 0) return;
 
         e.preventDefault();
+        e.stopPropagation();
         this.isDragging = true;
         this.dragStart = { x: e.clientX - this.offset.x, y: e.clientY - this.offset.y };
 
@@ -440,6 +528,9 @@ export class ImageViewer {
      * 由 Plugin 在全局注册，判断是否触发图片查看
      */
     handleDocumentClick(e: MouseEvent): void {
+        // 查看器已打开时，忽略全局点击，避免在查看模式内误触发
+        if (this.isOpen()) return;
+
         // 检查是否匹配快捷键
         if (!this.matchesShortcut(e)) return;
 

@@ -56,7 +56,7 @@ jobs:
                   mkdir -p dist
                   cp main.js manifest.json styles.css dist/
                   cd dist
-                  zip -r ../obsidian-image-tools-${clean_tag}.zip main.js manifest.json styles.css
+                  zip -r ../lspzc-only-view-image-${clean_tag}.zip main.js manifest.json styles.css
                   cd ..
 
             - name: Create release
@@ -69,4 +69,4 @@ jobs:
                   gh release create "$tag" \
                     --title="$clean_tag" \
                     --draft \
-                    obsidian-image-tools-${clean_tag}.zip
+                    lspzc-only-view-image-${clean_tag}.zip
